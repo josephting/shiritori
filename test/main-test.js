@@ -15,21 +15,29 @@ function extractWordsFromREADME() {
   return words;
 }
 
-function assertDuplicatedWord(words) {
+function assertDuplicatedWord(words, err=null) {
   words.forEach((w1, i) => {
     words.forEach((w2, j) => {
       if (i === j) return;
       if (w1 === w2) {
-        throw new Error(`Duplicated word: ${w1}`);
+        const message = `Duplicated word: ${w1}`;
+        if (typeof err === 'function') {
+          err(message);
+        }
+        throw new Error(message);
       }
     });
   });
 }
 
-function assertGameEnd(words) {
+function assertGameEnd(words, err=null) {
   words.forEach((w, i) => {
     if (w.endsWith('ン') || w.endsWith('ん')) {
-      throw new Error(`Game end: ${w}`);
+      const message = `Game end: ${w}`;
+      if (typeof err === 'function') {
+        err(message);
+      }
+      throw new Error(message);
     }
   });
 }
@@ -47,19 +55,23 @@ function calculatePronunciation(word) {
   }
 }
 
-function assertGameEndByPronunciation(words) {
+function assertGameEndByPronunciation(words, err=null) {
   return Promise.all(
     words.map((w, i) => {
       return calculatePronunciation(w).then(pron => {
         if (pron.endsWith('ン') || pron.endsWith('ん')) {
-          throw new Error(`Game end: ${w} (${pron})`);
+          const message = `Game end: ${w} (${pron})`;
+          if (typeof err === 'function') {
+            err(message);
+          }
+          throw new Error(message);
         }
       });
     })
   );
 }
 
-function assertConnection(words) {
+async function assertConnection(words, err=null) {
   const arr = [];
   const promises = words.map((w, i) => {
     return calculatePronunciation(w).then(pron => {
@@ -78,14 +90,36 @@ function assertConnection(words) {
       }
       console.log([prevPron, prevLast, pron]);
       if (!pron.startsWith(prevLast)) {
-        throw new Error(
-          `Unconnected words: ${words[i - 1]} (${prevPron}) -> ${
-            words[i]
-          } (${pron})`
-        );
+        const message = `Unconnected words: ${words[i - 1]} (${prevPron}) -> ${
+          words[i]
+        } (${pron})`;
+        if (typeof err === 'function') {
+          err(message);
+        }
+        throw new Error(message);
       }
     });
   });
+}
+
+async function postIssueComment() {
+  if (process.env.CIRCLE_PULL_REQUEST && process.env.GITHUB_TOKEN) {
+    const bot = new Bot();
+    bot.setToken(process.env.GITHUB_TOKEN);
+    const {
+      CIRCLE_PROJECT_USERNAME,
+      CIRCLE_PROJECT_REPONAME,
+      CIRCLE_PULL_REQUEST // "https://github.com/lacolaco/shiritori/pull/xx"
+    } = process.env;
+
+    const prNumber = parseInt(CIRCLE_PULL_REQUEST.match(/\/(\d+)$/)[1]);
+    return await bot.createIssueComment({
+      owner: CIRCLE_PROJECT_USERNAME,
+      repo: CIRCLE_PROJECT_REPONAME,
+      number: prNumber,
+      message
+    });
+  }
 }
 
 describe('meta_test', () => {
@@ -201,21 +235,7 @@ describe('shiritori', () => {
 `;
 
     if (process.env.CIRCLE_PULL_REQUEST && process.env.GITHUB_TOKEN) {
-      const bot = new Bot();
-      bot.setToken(process.env.GITHUB_TOKEN);
-      const {
-        CIRCLE_PROJECT_USERNAME,
-        CIRCLE_PROJECT_REPONAME,
-        CIRCLE_PULL_REQUEST // "https://github.com/lacolaco/shiritori/pull/xx"
-      } = process.env;
-
-      const prNumber = parseInt(CIRCLE_PULL_REQUEST.match(/\/(\d+)$/)[1]);
-      return await bot.createIssueComment({
-        owner: CIRCLE_PROJECT_USERNAME,
-        repo: CIRCLE_PROJECT_REPONAME,
-        number: prNumber,
-        message
-      });
+      postIssueComment(message);
     } else {
       console.log(message);
     }
